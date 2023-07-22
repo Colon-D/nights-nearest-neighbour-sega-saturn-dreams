@@ -6,6 +6,7 @@ using CallingConventions = Reloaded.Hooks.Definitions.X86.CallingConventions;
 using Reloaded.Hooks.Definitions.X86;
 using Reloaded.Memory.Sources;
 using Reloaded.Hooks.Definitions.Enums;
+using static Reloaded.Hooks.Definitions.X86.FunctionAttribute;
 
 namespace nights.test.nearestneighboursegasaturndreams;
 
@@ -62,13 +63,14 @@ public class Mod : ModBase // <= Do not Remove.
 				$"{_hooks.Utilities.GetAbsoluteCallMnemonics(NearestNeighbour, out NearestNeighbourReverseWrapper)}",
 				$"POPAD",
 			};
+
 			// - 3d
 			if (_configuration.NearestNeighbour3D) {
-				for (int i = 0x58CEA7; i < 0x58CEB8; ++i) {
+				for (int i = 0x58CE91; i < 0x58CEB8; ++i) {
 					Memory.Instance.SafeWrite(i, nop);
 				}
 				NearestNeighbour3DHook = _hooks.CreateAsmHook(
-					asmCallNearestNeighbourCode, 0x58CEB8, AsmHookBehaviour.DoNotExecuteOriginal
+					asmCallNearestNeighbourCode, 0x58CE91, AsmHookBehaviour.DoNotExecuteOriginal
 				).Activate();
 			}
 			// - 2d
@@ -76,30 +78,98 @@ public class Mod : ModBase // <= Do not Remove.
 				for (int i = 0x5921F9; i < 0x59221F; ++i) {
 					Memory.Instance.SafeWrite(i, nop);
 				}
-				for (int i = 0x59FC77; i < 0x59FC88; ++i) {
+				for (int i = 0x59FC66; i < 0x59FC88; ++i) {
 					Memory.Instance.SafeWrite(i, nop);
 				}
-				for (int i = 0x5DA230; i < 0x5DA242; ++i) {
+				for (int i = 0x5DA21E; i < 0x5DA242; ++i) {
 					Memory.Instance.SafeWrite(i, nop);
 				}
-				for (int i = 0x5D93D9; i < 0x5D93EB; ++i) {
+				for (int i = 0x5D93C7; i < 0x5D93EB; ++i) {
 					Memory.Instance.SafeWrite(i, nop);
 				}
 				NearestNeighbour2DHook = _hooks.CreateAsmHook(
 					asmCallNearestNeighbourCode, 0x5921F9, AsmHookBehaviour.DoNotExecuteOriginal
 				).Activate();
 				NearestNeighbour2DHook2 = _hooks.CreateAsmHook(
-					asmCallNearestNeighbourCode, 0x59FC77, AsmHookBehaviour.DoNotExecuteOriginal
+					asmCallNearestNeighbourCode, 0x59FC66, AsmHookBehaviour.DoNotExecuteOriginal
 				).Activate();
 				NearestNeighbour2DHook3 = _hooks.CreateAsmHook(
-					asmCallNearestNeighbourCode, 0x5DA230, AsmHookBehaviour.DoNotExecuteOriginal
+					asmCallNearestNeighbourCode, 0x5DA21E, AsmHookBehaviour.DoNotExecuteOriginal
 				).Activate();
 				NearestNeighbour2DHook4 = _hooks.CreateAsmHook(
-					asmCallNearestNeighbourCode, 0x5D93D9, AsmHookBehaviour.DoNotExecuteOriginal
+					asmCallNearestNeighbourCode, 0x5D93C7, AsmHookBehaviour.DoNotExecuteOriginal
 				).Activate();
 			}
+
+			// framebuffer filter
+			if (_configuration.FBNearestNeighbour) {
+				for (int i = 0x5986C3; i < 0x5986E5; ++i) {
+					Memory.Instance.SafeWrite(i, nop);
+				}
+				NearestNeighbourFB = _hooks.CreateAsmHook(
+					asmCallNearestNeighbourCode, 0x5986C3, AsmHookBehaviour.DoNotExecuteOriginal
+				).Activate();
+			}
+
+			if (_configuration.FBWhere != NearestNeighbourWhere.Nowhere) {
+				// this allows new framebuffers to be created,
+				// probably a memory leak but I don't really care
+				Memory.Instance.SafeWrite(0x69AA53, nop);
+				Memory.Instance.SafeWrite(0x69AA54, nop);
+
+				MainGameLoopHook = _hooks.CreateHook<MainGameLoop>(MainGameLoopImpl, 0x40A460).Activate();
+			}
+
+			_dreamType = (DreamType*)0x8B13C8;
+			_smallFB = false;
 		}
 	}
+
+	private unsafe bool ResizeFramebuffer(int width, int height) {
+		// maybe
+		var D3D9DeviceMaybe1 = (uint*)0x24C5000;
+		if (D3D9DeviceMaybe1 == null) {
+			return false;
+		}
+		var D3D9DeviceMaybe2 = (uint*)(*D3D9DeviceMaybe1 + 0x34);
+		if (D3D9DeviceMaybe2 == null) {
+			return false;
+		}
+
+		// idk what this is, I thought this was the d3d9 device too, but maybe not?
+		uint* pointer1 = (uint*)0x24C4FDC;
+		if (pointer1 == null) {
+			return false;
+		}
+		// idk what this is either
+		uint* pointer2 = (uint*)(*pointer1 + 0xC0);
+		if (pointer2 == null) {
+			return false;
+		}
+		// idk what this is but it stores the framebuffer texture
+		uint* pointer3 = (uint*)(*pointer2 + 0x24);
+		if (pointer3 == null) {
+			return false;
+		}
+
+		// idk what's going on in case that isn't clear, I trial and errored this
+
+		// call function that then further calls create texture
+		// (memory leak)
+		var CreateTextureCallerWrapper = _hooks.CreateWrapper<CreateTextureCaller>(0x69AA40, out _);
+		CreateTextureCallerWrapper(height, (uint*)*pointer3, width);
+
+		return true;
+	}
+
+	[Function(new[] { Register.edi, Register.esi }, Register.eax, StackCleanup.Callee)]
+	public unsafe delegate byte CreateTextureCaller(int height, uint* a2, int width2);
+	public IHook<CreateTextureCaller> CreateTextureCallerHook;
+
+	private unsafe DreamType* _dreamType;
+	private bool _smallFB;
+
+	private Timer _fbTimer;
 
 	[Function(CallingConventions.Cdecl)]
 	public unsafe delegate void NearestNeighbourType();
@@ -109,24 +179,80 @@ public class Mod : ModBase // <= Do not Remove.
 	public IAsmHook NearestNeighbour2DHook2;
 	public IAsmHook NearestNeighbour2DHook3;
 	public IAsmHook NearestNeighbour2DHook4;
+	public IAsmHook NearestNeighbourFB;
 	public unsafe void NearestNeighbour() {
 		var idk = *(int**)0x24C4FD4;
-		var filtering = &idk[10];
+		var min_filtering = &idk[9];
+		var max_filtering = &idk[10];
 
-		var target = 2;
+		const int nearest = 1;
+		const int bilinear = 2;
+
+		var target = bilinear;
 		if (_configuration.Where == NearestNeighbourWhere.Everywhere) {
-			target = 1;
-		} else {
-			var bnd_ss_xmas = (DreamType*)0x8B13C8;
-			if (*bnd_ss_xmas == DreamType.SegaSaturnDreams) {
-				target = 1;
+			target = nearest;
+		} else if (_configuration.Where == NearestNeighbourWhere.SegaSaturnDreams) {
+			if (*_dreamType == DreamType.SegaSaturnDreams) {
+				target = nearest;
 			}
 		}
 
-		if (*filtering != target) {
-			*filtering = target;
+		if (*min_filtering != target) {
+			if (_configuration.MinFilter) {
+				*min_filtering = target;
+			} else {
+				*min_filtering = bilinear;
+			}
 			idk[25] |= 7; // idk what this does, but it is in the original
 		}
+		if (*max_filtering != target) {
+			*max_filtering = target;
+			idk[25] |= 7; // idk what this does, but it is in the original too
+		}
+	}
+
+	[Function(CallingConventions.MicrosoftThiscall)]
+	public unsafe delegate int D3DXCreateTexture(
+		uint* pDevice, uint Width, uint Height, uint MipLevels, uint Usage, uint Format, uint Pool, uint* ppTexture
+	);
+
+	[Function(CallingConventions.Stdcall)]
+	public unsafe delegate int MainGameLoop();
+	public IHook<MainGameLoop> MainGameLoopHook;
+	// only hooked if fb can be resized
+	public unsafe int MainGameLoopImpl() {
+		int result = MainGameLoopHook.OriginalFunction();
+
+		// inner window size
+		int* width = (int*)0x24A75BC;
+		int* height = (int*)0x24A75B8;
+
+		// make fb smaller
+		if (
+			_smallFB == false
+			&& (
+				*_dreamType == DreamType.SegaSaturnDreams
+				|| _configuration.FBWhere == NearestNeighbourWhere.Everywhere
+			)
+		) {
+			float aspectRatio = (float)*width / *height;
+			int newWidth = (int)(aspectRatio * _configuration.FBHeight + 0.5);
+			if (ResizeFramebuffer(newWidth, _configuration.FBHeight)) {
+				_smallFB = true;
+			}
+		}
+		// make fb bigger
+		else if (
+			_smallFB == true
+			&& *_dreamType != DreamType.SegaSaturnDreams
+			&& _configuration.FBWhere != NearestNeighbourWhere.Everywhere
+		) {
+			if (ResizeFramebuffer(*width, *height)) {
+				_smallFB = false;
+			}
+		}
+
+		return result;
 	}
 
 	#region Standard Overrides

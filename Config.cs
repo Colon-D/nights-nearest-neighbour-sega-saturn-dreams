@@ -37,9 +37,34 @@ public class Config : Configurable<Config>
 	[Description("Where Nearest-Neighbour sampling will be applied.")]
 	[DefaultValue(NearestNeighbourWhere.SegaSaturnDreams)]
     public NearestNeighbourWhere Where { get; set; } = NearestNeighbourWhere.SegaSaturnDreams;
+
+	[DisplayName("Min Filter")]
+	[Description("Should things smaller than their default pixel size be pixelated (true), or blurry (false).")]
+	[DefaultValue(true)]
+	public bool MinFilter { get; set; } = true;
+
+	[Category("Framebuffer")]
+	[DisplayName("Lower Size Where?")]
+	[Description("Where the framebuffer size should be lower")]
+	[DefaultValue(NearestNeighbourWhere.SegaSaturnDreams)]
+	public NearestNeighbourWhere FBWhere { get; set; } = NearestNeighbourWhere.SegaSaturnDreams;
+	[Category("Framebuffer")]
+	[DisplayName("Height")]
+	[Description("The height that the framebuffer should be. Width will be calculated from this.")]
+	[DefaultValue(240)]
+	public int FBHeight { get; set; } = 240;
+	[Category("Framebuffer")]
+	[DisplayName("Nearest Neighbour")]
+	[Description(
+		"Should the framebuffer be pixelated (true), or blurry (false).\n"
+		+ "\"Where\" still applies, both conditions must be true."
+	)]
+	[DefaultValue(true)]
+	public bool FBNearestNeighbour { get; set; } = true;
 }
 
 public enum NearestNeighbourWhere {
+    Nowhere,
 	SegaSaturnDreams,
 	Everywhere
 }
